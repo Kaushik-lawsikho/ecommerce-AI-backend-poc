@@ -1,4 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
+import { createModuleLogger, errorLogger, performanceLogger, auditLogger } from '../config/logger';
+
+const logger = createModuleLogger('ai-middleware');
 
 export interface AIRequest extends Request {
   aiContext?: {
@@ -128,10 +131,20 @@ export const validateAtLeastOne = (fields: string[] = []) => {
  * Error handler for AI-related errors
  */
 export const aiErrorHandler = (error: any, req: Request, res: Response, next: NextFunction) => {
-  console.error('AI Error:', error);
+  errorLogger(error, { 
+    context: 'ai_error_handler',
+    requestId: (req as any).requestId,
+    userId: (req.session as any)?.userId,
+    url: req.url,
+    method: req.method
+  });
   
   // Handle specific AI errors
   if (error.message?.includes('API key')) {
+    auditLogger('ai_auth_failed', (req.session as any)?.userId, 'ai_service', { 
+      error: error.message,
+      requestId: (req as any).requestId 
+    });
     return res.status(401).json({
       error: 'AI authentication failed',
       message: 'Invalid or missing AI API key'
@@ -139,6 +152,10 @@ export const aiErrorHandler = (error: any, req: Request, res: Response, next: Ne
   }
   
   if (error.message?.includes('quota') || error.message?.includes('rate limit')) {
+    auditLogger('ai_rate_limited', (req.session as any)?.userId, 'ai_service', { 
+      error: error.message,
+      requestId: (req as any).requestId 
+    });
     return res.status(429).json({
       error: 'AI service rate limited',
       message: 'AI service is temporarily unavailable due to rate limits'
@@ -146,6 +163,10 @@ export const aiErrorHandler = (error: any, req: Request, res: Response, next: Ne
   }
   
   if (error.message?.includes('timeout')) {
+    auditLogger('ai_timeout', (req.session as any)?.userId, 'ai_service', { 
+      error: error.message,
+      requestId: (req as any).requestId 
+    });
     return res.status(504).json({
       error: 'AI service timeout',
       message: 'AI service request timed out'
@@ -154,6 +175,10 @@ export const aiErrorHandler = (error: any, req: Request, res: Response, next: Ne
   
   // Generic AI error
   if (error.message?.includes('AI') || error.message?.includes('Gemini')) {
+    auditLogger('ai_service_error', (req.session as any)?.userId, 'ai_service', { 
+      error: error.message,
+      requestId: (req as any).requestId 
+    });
     return res.status(502).json({
       error: 'AI service error',
       message: 'AI service is temporarily unavailable'
@@ -172,17 +197,26 @@ export const logAIRequest = (req: AIRequest, res: Response, next: NextFunction) 
   
   res.on('finish', () => {
     const duration = Date.now() - startTime;
-    const logData = {
+    
+    // Log performance metrics
+    performanceLogger('ai_request', duration, {
+      method: req.method,
+      url: req.url,
+      statusCode: res.statusCode,
+      aiContext: req.aiContext,
+      userAgent: req.get('User-Agent'),
+      ip: req.ip,
+      requestId: (req as any).requestId
+    });
+    
+    // Log audit event for AI requests
+    auditLogger('ai_request_completed', (req.session as any)?.userId, 'ai_service', {
       method: req.method,
       url: req.url,
       statusCode: res.statusCode,
       duration,
-      aiContext: req.aiContext,
-      userAgent: req.get('User-Agent'),
-      ip: req.ip
-    };
-    
-    console.log('AI Request:', JSON.stringify(logData, null, 2));
+      requestId: (req as any).requestId
+    });
   });
   
   next();

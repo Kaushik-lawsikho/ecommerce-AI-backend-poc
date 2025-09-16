@@ -241,6 +241,8 @@ export function parseAIResponse<T>(response: string, fallback: T): T {
   try {
     return JSON.parse(response);
   } catch (error) {
+    // Note: This utility function doesn't have access to logger, so we'll keep console.warn
+    // In a real implementation, you might want to pass a logger instance or use a global logger
     console.warn('Failed to parse AI response:', error);
     return fallback;
   }

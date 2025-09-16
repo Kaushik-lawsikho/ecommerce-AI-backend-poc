@@ -1,6 +1,9 @@
 import { Request, Response } from "express";
 import { AIService } from "../services/ai.service";
 import { ProductService } from "../services/product.service";
+import { createModuleLogger, errorLogger, auditLogger } from "../config/logger";
+
+const logger = createModuleLogger('ai-controller');
 
 const aiService = new AIService();
 const productService = new ProductService();
@@ -208,10 +211,34 @@ export async function getRecommendations(req: Request, res: Response) {
       limit: req.body.limit || 5
     };
 
+    logger.info('Processing recommendation request', { 
+      userId: request.userId,
+      productId: request.productId,
+      categoryId: request.categoryId,
+      searchQuery: request.searchQuery,
+      limit: request.limit,
+      requestId: (req as any).requestId
+    });
+
     const recommendations = await aiService.getProductRecommendations(request);
+    
+    auditLogger('recommendation_request_completed', request.userId, 'ai_controller', {
+      productId: request.productId,
+      categoryId: request.categoryId,
+      searchQuery: request.searchQuery,
+      limit: request.limit,
+      recommendationsCount: recommendations.recommendations.length,
+      confidence: recommendations.confidence,
+      requestId: (req as any).requestId
+    });
+
     res.json(recommendations);
   } catch (error: any) {
-    console.error('Recommendation error:', error);
+    errorLogger(error, { 
+      context: 'get_recommendations',
+      userId: req.body.userId,
+      requestId: (req as any).requestId
+    });
     res.status(500).json({
       error: 'Failed to generate recommendations',
       message: error.message
@@ -263,16 +290,36 @@ export async function generateContent(req: Request, res: Response) {
     };
 
     if (!request.type) {
+      logger.warn('Content generation request missing type', { 
+        requestId: (req as any).requestId,
+        body: req.body 
+      });
       return res.status(400).json({
         error: 'Missing required field',
         message: 'Content type is required'
       });
     }
 
+    logger.info('Processing content generation request', { 
+      type: request.type,
+      requestId: (req as any).requestId
+    });
+
     const content = await aiService.generateContent(request);
+    
+    auditLogger('content_generation_completed', (req.session as any)?.userId, 'ai_controller', {
+      type: request.type,
+      contentLength: content.content.length,
+      requestId: (req as any).requestId
+    });
+
     res.json(content);
   } catch (error: any) {
-    console.error('Content generation error:', error);
+    errorLogger(error, { 
+      context: 'generate_content',
+      type: req.body.type,
+      requestId: (req as any).requestId
+    });
     res.status(500).json({
       error: 'Failed to generate content',
       message: error.message
@@ -320,16 +367,36 @@ export async function enhanceSearchQuery(req: Request, res: Response) {
     };
 
     if (!request.originalQuery) {
+      logger.warn('Search enhancement request missing original query', { 
+        requestId: (req as any).requestId,
+        body: req.body 
+      });
       return res.status(400).json({
         error: 'Missing required field',
         message: 'Original query is required'
       });
     }
 
+    logger.info('Processing search enhancement request', { 
+      originalQuery: request.originalQuery,
+      requestId: (req as any).requestId
+    });
+
     const enhancement = await aiService.enhanceSearchQuery(request);
+    
+    auditLogger('search_enhancement_completed', (req.session as any)?.userId, 'ai_controller', {
+      originalQuery: request.originalQuery,
+      enhancedQuery: enhancement.enhancedQuery,
+      requestId: (req as any).requestId
+    });
+
     res.json(enhancement);
   } catch (error: any) {
-    console.error('Search enhancement error:', error);
+    errorLogger(error, { 
+      context: 'enhance_search_query',
+      originalQuery: req.body.originalQuery,
+      requestId: (req as any).requestId
+    });
     res.status(500).json({
       error: 'Failed to enhance search query',
       message: error.message
@@ -373,16 +440,41 @@ export async function analyzeSentiment(req: Request, res: Response) {
     const { productId, reviews } = req.body;
 
     if (!productId || !reviews || !Array.isArray(reviews)) {
+      logger.warn('Sentiment analysis request missing required fields', { 
+        requestId: (req as any).requestId,
+        productId,
+        reviewsCount: reviews?.length || 0
+      });
       return res.status(400).json({
         error: 'Missing required fields',
         message: 'Product ID and reviews array are required'
       });
     }
 
+    logger.info('Processing sentiment analysis request', { 
+      productId,
+      reviewsCount: reviews.length,
+      requestId: (req as any).requestId
+    });
+
     const analysis = await aiService.analyzeProductSentiment(productId, reviews);
+    
+    auditLogger('sentiment_analysis_completed', (req.session as any)?.userId, 'ai_controller', {
+      productId,
+      reviewsCount: reviews.length,
+      sentimentScore: analysis.sentimentScore,
+      overallSentiment: analysis.overallSentiment,
+      requestId: (req as any).requestId
+    });
+
     res.json(analysis);
   } catch (error: any) {
-    console.error('Sentiment analysis error:', error);
+    errorLogger(error, { 
+      context: 'analyze_sentiment',
+      productId: req.body.productId,
+      reviewsCount: req.body.reviews?.length || 0,
+      requestId: (req as any).requestId
+    });
     res.status(500).json({
       error: 'Failed to analyze sentiment',
       message: error.message
@@ -433,9 +525,19 @@ export async function getProductRecommendations(req: Request, res: Response) {
     const productId = req.params.id;
     const limit = parseInt(req.query.limit as string) || 5;
 
+    logger.info('Processing product recommendation request', { 
+      productId,
+      limit,
+      requestId: (req as any).requestId
+    });
+
     // Verify product exists
     const product = await productService.findById(productId);
     if (!product) {
+      logger.warn('Product not found for recommendations', { 
+        productId,
+        requestId: (req as any).requestId
+      });
       return res.status(404).json({
         error: 'Product not found',
         message: `Product with ID ${productId} does not exist`
@@ -447,9 +549,22 @@ export async function getProductRecommendations(req: Request, res: Response) {
       limit
     });
 
+    auditLogger('product_recommendation_completed', (req.session as any)?.userId, 'ai_controller', {
+      productId,
+      limit,
+      recommendationsCount: recommendations.recommendations.length,
+      confidence: recommendations.confidence,
+      requestId: (req as any).requestId
+    });
+
     res.json(recommendations);
   } catch (error: any) {
-    console.error('Product recommendation error:', error);
+    errorLogger(error, { 
+      context: 'get_product_recommendations',
+      productId: req.params.id,
+      limit: req.query.limit,
+      requestId: (req as any).requestId
+    });
     res.status(500).json({
       error: 'Failed to generate product recommendations',
       message: error.message
@@ -500,14 +615,33 @@ export async function getCategoryRecommendations(req: Request, res: Response) {
     const categoryId = req.params.id;
     const limit = parseInt(req.query.limit as string) || 5;
 
+    logger.info('Processing category recommendation request', { 
+      categoryId,
+      limit,
+      requestId: (req as any).requestId
+    });
+
     const recommendations = await aiService.getProductRecommendations({
       categoryId,
       limit
     });
 
+    auditLogger('category_recommendation_completed', (req.session as any)?.userId, 'ai_controller', {
+      categoryId,
+      limit,
+      recommendationsCount: recommendations.recommendations.length,
+      confidence: recommendations.confidence,
+      requestId: (req as any).requestId
+    });
+
     res.json(recommendations);
   } catch (error: any) {
-    console.error('Category recommendation error:', error);
+    errorLogger(error, { 
+      context: 'get_category_recommendations',
+      categoryId: req.params.id,
+      limit: req.query.limit,
+      requestId: (req as any).requestId
+    });
     res.status(500).json({
       error: 'Failed to generate category recommendations',
       message: error.message

@@ -3,11 +3,14 @@ import { User, UserRole } from "../entities/user.entity";
 import { Category } from "../entities/category.entity";
 import { Product } from "../entities/product.entity";
 import bcrypt from "bcryptjs";
+import { createModuleLogger, eventLogger, errorLogger } from "../config/logger";
+
+const logger = createModuleLogger('seed-script');
 
 async function seedDatabase() {
   try {
     await AppDataSource.initialize();
-    console.log("Database connected");
+    eventLogger("database_connected", { context: "seed_script" });
 
     // Create admin user
     const adminUser = new User();
@@ -20,7 +23,7 @@ async function seedDatabase() {
     adminUser.isActive = true;
 
     await AppDataSource.getRepository(User).save(adminUser);
-    console.log("Admin user created");
+    eventLogger("admin_user_created", { email: adminUser.email, username: adminUser.username });
 
     // Create regular user
     const regularUser = new User();
@@ -33,7 +36,7 @@ async function seedDatabase() {
     regularUser.isActive = true;
 
     await AppDataSource.getRepository(User).save(regularUser);
-    console.log("Regular user created");
+    eventLogger("regular_user_created", { email: regularUser.email, username: regularUser.username });
 
     // Create categories
     const categories = [
@@ -66,7 +69,7 @@ async function seedDatabase() {
       const savedCategory = await AppDataSource.getRepository(Category).save(category);
       savedCategories.push(savedCategory);
     }
-    console.log("Categories created");
+    eventLogger("categories_created", { count: savedCategories.length, categories: savedCategories.map(c => c.name) });
 
     // Create products
     const products = [
@@ -149,11 +152,15 @@ async function seedDatabase() {
       Object.assign(product, productData);
       await AppDataSource.getRepository(Product).save(product);
     }
-    console.log("Products created");
+    eventLogger("products_created", { count: products.length, products: products.map(p => p.name) });
 
-    console.log("Database seeded successfully!");
+    eventLogger("database_seeded_successfully", { 
+      users: 2, 
+      categories: savedCategories.length, 
+      products: products.length 
+    });
   } catch (error) {
-    console.error("Error seeding database:", error);
+    errorLogger(error as Error, { context: "seed_database" });
   } finally {
     await AppDataSource.destroy();
   }

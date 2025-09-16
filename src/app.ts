@@ -2,6 +2,7 @@ import express from "express";
 import session from "express-session";
 import RedisStore from "connect-redis";
 import { redisClient } from "./config/redis";
+import { requestLogger } from "./config/logger";
 import productRoutes from "./routes/product.routes";
 import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/user.routes";
@@ -17,6 +18,9 @@ dotenv.config();
 const app = express();
 
 app.use(express.json());
+
+// Request logging middleware
+app.use(requestLogger);
 
 // session
 app.use(session({

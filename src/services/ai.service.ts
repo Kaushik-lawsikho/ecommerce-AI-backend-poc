@@ -1,6 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
 import { Product } from '../entities/product.entity';
 import { ProductService } from './product.service';
+import { createModuleLogger, errorLogger, performanceLogger, auditLogger } from '../config/logger';
+
+const logger = createModuleLogger('ai-service');
 
 export interface AIRecommendationRequest {
   userId?: string;
@@ -59,8 +62,17 @@ export class AIService {
    * Generate product recommendations using AI
    */
   async getProductRecommendations(request: AIRecommendationRequest): Promise<AIRecommendationResponse> {
+    const startTime = Date.now();
     try {
       const { userId, productId, categoryId, searchQuery, limit = 5 } = request;
+      
+      logger.info('Starting AI recommendation generation', { 
+        userId, 
+        productId, 
+        categoryId, 
+        searchQuery, 
+        limit 
+      });
       
       // Get context products
       let contextProducts: Product[] = [];
@@ -75,6 +87,7 @@ export class AIService {
 
       // If no products found, return empty recommendations with explanation
       if (contextProducts.length === 0) {
+        logger.warn('No products found for recommendations', { productId, categoryId });
         return {
           recommendations: [],
           reasoning: 'No products available for recommendations. Please add some products to the database first.',
@@ -103,9 +116,40 @@ export class AIService {
         text += chunk.text || '';
       }
 
-      return this.parseRecommendationResponse(text, limit);
+      const result = this.parseRecommendationResponse(text, limit);
+      const duration = Date.now() - startTime;
+      
+      performanceLogger('ai_recommendation_generation', duration, {
+        userId,
+        productId,
+        categoryId,
+        searchQuery,
+        limit,
+        recommendationsCount: result.recommendations.length,
+        confidence: result.confidence
+      });
+      
+      auditLogger('ai_recommendation_generated', userId, 'ai_service', {
+        productId,
+        categoryId,
+        searchQuery,
+        limit,
+        recommendationsCount: result.recommendations.length,
+        confidence: result.confidence
+      });
+
+      return result;
     } catch (error) {
-      console.error('AI recommendation error:', error);
+      const duration = Date.now() - startTime;
+      errorLogger(error as Error, { 
+        context: 'ai_recommendation_generation',
+        userId: request.userId,
+        productId: request.productId,
+        categoryId: request.categoryId,
+        searchQuery: request.searchQuery,
+        limit: request.limit,
+        duration
+      });
       throw new Error('Failed to generate recommendations');
     }
   }
@@ -114,7 +158,10 @@ export class AIService {
    * Generate content using AI
    */
   async generateContent(request: AIContentRequest): Promise<AIContentResponse> {
+    const startTime = Date.now();
     try {
+      logger.info('Starting AI content generation', { type: request.type });
+      
       const prompt = this.buildContentPrompt(request);
       
       const response = await this.genAI.models.generateContentStream({
@@ -127,9 +174,27 @@ export class AIService {
         text += chunk.text || '';
       }
 
-      return this.parseContentResponse(text);
+      const result = this.parseContentResponse(text);
+      const duration = Date.now() - startTime;
+      
+      performanceLogger('ai_content_generation', duration, {
+        type: request.type,
+        contentLength: result.content.length
+      });
+      
+      auditLogger('ai_content_generated', undefined, 'ai_service', {
+        type: request.type,
+        contentLength: result.content.length
+      });
+
+      return result;
     } catch (error) {
-      console.error('AI content generation error:', error);
+      const duration = Date.now() - startTime;
+      errorLogger(error as Error, { 
+        context: 'ai_content_generation',
+        type: request.type,
+        duration
+      });
       throw new Error('Failed to generate content');
     }
   }
@@ -138,7 +203,10 @@ export class AIService {
    * Enhance search queries using AI
    */
   async enhanceSearchQuery(request: AISearchEnhancementRequest): Promise<AISearchEnhancementResponse> {
+    const startTime = Date.now();
     try {
+      logger.info('Starting AI search enhancement', { originalQuery: request.originalQuery });
+      
       const prompt = this.buildSearchEnhancementPrompt(request);
       
       const response = await this.genAI.models.generateContentStream({
@@ -151,9 +219,27 @@ export class AIService {
         text += chunk.text || '';
       }
 
-      return this.parseSearchEnhancementResponse(text);
+      const result = this.parseSearchEnhancementResponse(text);
+      const duration = Date.now() - startTime;
+      
+      performanceLogger('ai_search_enhancement', duration, {
+        originalQuery: request.originalQuery,
+        enhancedQuery: result.enhancedQuery
+      });
+      
+      auditLogger('ai_search_enhanced', undefined, 'ai_service', {
+        originalQuery: request.originalQuery,
+        enhancedQuery: result.enhancedQuery
+      });
+
+      return result;
     } catch (error) {
-      console.error('AI search enhancement error:', error);
+      const duration = Date.now() - startTime;
+      errorLogger(error as Error, { 
+        context: 'ai_search_enhancement',
+        originalQuery: request.originalQuery,
+        duration
+      });
       throw new Error('Failed to enhance search query');
     }
   }
@@ -162,7 +248,10 @@ export class AIService {
    * Analyze product sentiment and provide insights
    */
   async analyzeProductSentiment(productId: string, reviews: string[]): Promise<any> {
+    const startTime = Date.now();
     try {
+      logger.info('Starting AI sentiment analysis', { productId, reviewsCount: reviews.length });
+      
       const prompt = this.buildSentimentAnalysisPrompt(productId, reviews);
       
       const response = await this.genAI.models.generateContentStream({
@@ -175,9 +264,31 @@ export class AIService {
         text += chunk.text || '';
       }
 
-      return this.parseSentimentAnalysisResponse(text);
+      const result = this.parseSentimentAnalysisResponse(text);
+      const duration = Date.now() - startTime;
+      
+      performanceLogger('ai_sentiment_analysis', duration, {
+        productId,
+        reviewsCount: reviews.length,
+        sentimentScore: result.sentimentScore
+      });
+      
+      auditLogger('ai_sentiment_analyzed', undefined, 'ai_service', {
+        productId,
+        reviewsCount: reviews.length,
+        sentimentScore: result.sentimentScore,
+        overallSentiment: result.overallSentiment
+      });
+
+      return result;
     } catch (error) {
-      console.error('AI sentiment analysis error:', error);
+      const duration = Date.now() - startTime;
+      errorLogger(error as Error, { 
+        context: 'ai_sentiment_analysis',
+        productId,
+        reviewsCount: reviews.length,
+        duration
+      });
       throw new Error('Failed to analyze sentiment');
     }
   }
@@ -310,9 +421,10 @@ Provide sentiment analysis in JSON format:
   }
 
   private parseRecommendationResponse(text: string, limit: number): AIRecommendationResponse {
+    let cleanText = '';
     try {
       // Clean the response text - remove markdown formatting
-      let cleanText = text.trim();
+      cleanText = text.trim();
       
       // Remove markdown code blocks
       if (cleanText.startsWith('```json')) {
@@ -327,7 +439,7 @@ Provide sentiment analysis in JSON format:
         cleanText = jsonMatch[0];
       }
       
-      console.log('Cleaned AI response:', cleanText);
+      logger.debug('Cleaned AI response', { cleanText });
       
       const parsed = JSON.parse(cleanText);
       return {
@@ -336,8 +448,11 @@ Provide sentiment analysis in JSON format:
         confidence: parsed.confidence || 0.5
       };
     } catch (error) {
-      console.error('Failed to parse recommendation response:', error);
-      console.error('Raw AI response:', text);
+      errorLogger(error as Error, { 
+        context: 'parse_recommendation_response',
+        rawResponse: text,
+        cleanText: cleanText
+      });
       return {
         recommendations: [],
         reasoning: `Failed to parse AI response: ${error instanceof Error ? error.message : String(error)}`,
@@ -354,7 +469,10 @@ Provide sentiment analysis in JSON format:
         suggestions: parsed.suggestions || []
       };
     } catch (error) {
-      console.error('Failed to parse content response:', error);
+      errorLogger(error as Error, { 
+        context: 'parse_content_response',
+        rawResponse: text
+      });
       return {
         content: text,
         suggestions: []
@@ -371,7 +489,10 @@ Provide sentiment analysis in JSON format:
         searchTerms: parsed.searchTerms || []
       };
     } catch (error) {
-      console.error('Failed to parse search enhancement response:', error);
+      errorLogger(error as Error, { 
+        context: 'parse_search_enhancement_response',
+        rawResponse: text
+      });
       return {
         enhancedQuery: text,
         suggestedFilters: {},
@@ -384,7 +505,10 @@ Provide sentiment analysis in JSON format:
     try {
       return JSON.parse(text);
     } catch (error) {
-      console.error('Failed to parse sentiment analysis response:', error);
+      errorLogger(error as Error, { 
+        context: 'parse_sentiment_analysis_response',
+        rawResponse: text
+      });
       return {
         overallSentiment: 'neutral',
         sentimentScore: 0.5,
