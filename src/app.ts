@@ -13,11 +13,25 @@ import aiRoutes from "./routes/ai.routes";
 import swaggerUi from "swagger-ui-express";
 import swaggerJsdoc from "swagger-jsdoc";
 import dotenv from "dotenv";
+import { securityHeaders, xssProtection, sqlInjectionProtection, requestSizeLimit, securityLogging } from "./middlewares/security.middleware";
+import { errorHandler, notFoundHandler, setupGlobalErrorHandlers } from "./middlewares/error.middleware";
 dotenv.config();
 
 const app = express();
 
-app.use(express.json());
+// Setup global error handlers
+setupGlobalErrorHandlers();
+
+// Security middleware (order matters!)
+app.use(securityHeaders);
+app.use(xssProtection);
+app.use(sqlInjectionProtection);
+app.use(requestSizeLimit(5 * 1024 * 1024)); // 5MB global limit
+app.use(securityLogging);
+
+// Body parsing with size limits
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Request logging middleware
 app.use(requestLogger);
@@ -86,5 +100,9 @@ const swaggerSpec = swaggerJsdoc({
 });
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// Error handling middleware (must be last)
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 export default app;

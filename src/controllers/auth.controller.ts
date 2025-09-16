@@ -1,5 +1,8 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/user.service";
+import { createValidationMiddleware } from "../middlewares/validation.middleware";
+import { RegisterDto, LoginDto } from "../dto/validation.dto";
+import { asyncHandler } from "../middlewares/error.middleware";
 
 const userService = new UserService();
 
@@ -155,43 +158,31 @@ const userService = new UserService();
  *                   type: string
  *                   example: "User with this username or email already exists"
  */
-export async function register(req: Request, res: Response) {
-  try {
-    const { username, email, password, firstName, lastName, phone, role } = req.body;
+export const register = asyncHandler(async (req: Request, res: Response) => {
+  const { username, email, password, firstName, lastName, phone, role } = req.body;
 
-    if (!username || !email || !password) {
-      return res.status(400).json({ message: "Username, email, and password are required" });
+  const user = await userService.createUser({
+    username,
+    email,
+    password,
+    firstName,
+    lastName,
+    phone,
+    role
+  });
+
+  res.status(201).json({
+    message: "User registered successfully",
+    user: {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName
     }
-
-    if (password.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters long" });
-    }
-
-    const user = await userService.createUser({
-      username,
-      email,
-      password,
-      firstName,
-      lastName,
-      phone,
-      role
-    });
-
-    res.status(201).json({
-      message: "User registered successfully",
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        firstName: user.firstName,
-        lastName: user.lastName
-      }
-    });
-  } catch (error: any) {
-    res.status(400).json({ message: error.message });
-  }
-}
+  });
+});
 
 /**
  * @openapi
@@ -225,36 +216,28 @@ export async function register(req: Request, res: Response) {
  *                   type: string
  *                   example: "Invalid credentials"
  */
-export async function login(req: Request, res: Response) {
-  try {
-    const { usernameOrEmail, password } = req.body;
+export const login = asyncHandler(async (req: Request, res: Response) => {
+  const { usernameOrEmail, password } = req.body;
 
-    if (!usernameOrEmail || !password) {
-      return res.status(400).json({ message: "Username/email and password required" });
+  const user = await userService.authenticateUser(usernameOrEmail, password);
+  const token = userService.generateToken(user);
+  
+  // Store token in Redis
+  await userService.storeTokenInRedis(token, user);
+
+  res.json({
+    message: "Login successful",
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName
     }
-
-    const user = await userService.authenticateUser(usernameOrEmail, password);
-    const token = userService.generateToken(user);
-    
-    // Store token in Redis
-    await userService.storeTokenInRedis(token, user);
-
-    res.json({
-      message: "Login successful",
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        firstName: user.firstName,
-        lastName: user.lastName
-      }
-    });
-  } catch (error: any) {
-    res.status(401).json({ message: error.message });
-  }
-}
+  });
+});
 
 /**
  * @openapi
@@ -276,17 +259,13 @@ export async function login(req: Request, res: Response) {
  *       401:
  *         description: Unauthorized
  */
-export async function logout(req: Request, res: Response) {
-  try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1];
+export const logout = asyncHandler(async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
 
-    if (token) {
-      await userService.invalidateToken(token);
-    }
-
-    res.json({ message: "Logout successful" });
-  } catch (error) {
-    res.status(500).json({ message: "Logout failed" });
+  if (token) {
+    await userService.invalidateToken(token);
   }
-}
+
+  res.json({ message: "Logout successful" });
+});

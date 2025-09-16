@@ -1,5 +1,8 @@
 import { Request, Response } from "express";
 import { ProductService } from "../services/product.service";
+import { createValidationMiddleware, validateQueryParams, validatePathParams, validators } from "../middlewares/validation.middleware";
+import { CreateProductDto, UpdateProductDto, SearchProductsDto } from "../dto/validation.dto";
+import { asyncHandler } from "../middlewares/error.middleware";
 
 const service = new ProductService();
 
@@ -161,10 +164,10 @@ const service = new ProductService();
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-export async function listProducts(req: Request, res: Response) {
+export const listProducts = asyncHandler(async (req: Request, res: Response) => {
   const products = await service.listAll();
   res.json(products);
-}
+});
 
 /**
  * @openapi
@@ -205,11 +208,11 @@ export async function listProducts(req: Request, res: Response) {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-export async function getProduct(req: Request, res: Response) {
+export const getProduct = asyncHandler(async (req: Request, res: Response) => {
   const p = await service.findById(req.params.id);
   if (!p) return res.status(404).json({ message: "Not found" });
   return res.json(p);
-}
+});
 
 /**
  * @openapi
@@ -265,10 +268,10 @@ export async function getProduct(req: Request, res: Response) {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-export async function createProduct(req: Request, res: Response) {
+export const createProduct = asyncHandler(async (req: Request, res: Response) => {
   const created = await service.create(req.body);
   res.status(201).json(created);
-}
+});
 
 /**
  * @openapi
@@ -337,10 +340,10 @@ export async function createProduct(req: Request, res: Response) {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-export async function updateProduct(req: Request, res: Response) {
+export const updateProduct = asyncHandler(async (req: Request, res: Response) => {
   const updated = await service.update(req.params.id, req.body);
   res.json(updated);
-}
+});
 
 /**
  * @openapi
@@ -389,10 +392,10 @@ export async function updateProduct(req: Request, res: Response) {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-export async function deleteProduct(req: Request, res: Response) {
+export const deleteProduct = asyncHandler(async (req: Request, res: Response) => {
   await service.remove(req.params.id);
   res.status(204).send();
-}
+});
 
 /**
  * @openapi
@@ -478,23 +481,19 @@ export async function deleteProduct(req: Request, res: Response) {
  *       500:
  *         description: Internal server error
  */
-export async function searchProducts(req: Request, res: Response) {
-  try {
-    const filters = {
-      search: req.query.search as string,
-      categoryId: req.query.categoryId as string,
-      minPrice: req.query.minPrice ? parseFloat(req.query.minPrice as string) : undefined,
-      maxPrice: req.query.maxPrice ? parseFloat(req.query.maxPrice as string) : undefined,
-      page: req.query.page ? parseInt(req.query.page as string) : 1,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : 10
-    };
+export const searchProducts = asyncHandler(async (req: Request, res: Response) => {
+  const filters = {
+    search: req.query.search as string,
+    categoryId: req.query.categoryId as string,
+    minPrice: req.query.minPrice ? parseFloat(req.query.minPrice as string) : undefined,
+    maxPrice: req.query.maxPrice ? parseFloat(req.query.maxPrice as string) : undefined,
+    page: req.query.page ? parseInt(req.query.page as string) : 1,
+    limit: req.query.limit ? parseInt(req.query.limit as string) : 10
+  };
 
-    const result = await service.search(filters);
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-}
+  const result = await service.search(filters);
+  res.json(result);
+});
 
 /**
  * @openapi
@@ -526,12 +525,8 @@ export async function searchProducts(req: Request, res: Response) {
  *       500:
  *         description: Internal server error
  */
-export async function getFeaturedProducts(req: Request, res: Response) {
-  try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 8;
-    const products = await service.getFeaturedProducts(limit);
-    res.json(products);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
-  }
-}
+export const getFeaturedProducts = asyncHandler(async (req: Request, res: Response) => {
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 8;
+  const products = await service.getFeaturedProducts(limit);
+  res.json(products);
+});
